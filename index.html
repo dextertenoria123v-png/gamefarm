@@ -1,11 +1,172 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>project</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Student Records – CRUD</title>
+<style>
+  :root {
+    --bg: #eef2f6; --surface: #fff; --ink: #14212e; --muted: #5d6b79;
+    --line: #d5dde5; --accent: #1456d9; --danger: #c62b3a;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #0f1720; --surface: #17212c; --ink: #e8eef4; --muted: #93a1af; --line: #2a3745; --accent: #5b94ff; --danger: #ff6b78; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 900px; margin: 0 auto; padding: 24px 16px 48px; display: grid; gap: 20px; }
+  h1 { font-size: 1.5rem; margin: 0; }
+  h2 { font-size: 1.05rem; margin: 0 0 12px; }
+  p.sub { margin: 4px 0 0; color: var(--muted); }
+  section { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 18px; }
+  form { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; align-items: end; }
+  label { display: grid; gap: 4px; font-size: .85rem; color: var(--muted); }
+  input, select { font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; width: 100%; }
+  input:focus-visible, select:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .actions { display: flex; gap: 8px; }
+  button { font: inherit; cursor: pointer; border-radius: 6px; padding: 8px 14px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  button.danger { color: var(--danger); }
+  button.small { padding: 4px 10px; font-size: .85rem; }
+  .bar { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+  .bar input { max-width: 260px; }
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th { font-size: .85rem; color: var(--muted); font-weight: 600; }
+  tr.editing td { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+  td.row-actions { display: flex; gap: 6px; }
+  .empty { text-align: center; color: var(--muted); padding: 28px 8px; }
+  .err { color: var(--danger); font-size: .85rem; min-height: 1.2em; margin: 8px 0 0; }
+</style>
 </head>
 <body>
-   <h1>kupalsS</h1>
+<main>
+  <header>
+    <h1>Student records</h1>
+    <p class="sub">Add, view, edit and delete. Data is saved in your browser.</p>
+  </header>
+
+  <section>
+    <h2 id="form-title">Add student</h2>
+    <form id="form" novalidate>
+      <label>Full name
+        <input id="name" required placeholder="Juan Dela Cruz">
+      </label>
+      <label>Email
+        <input id="email" type="email" required placeholder="juan@example.com">
+      </label>
+      <label>Course
+        <input id="course" required placeholder="BSIT">
+      </label>
+      <label>Year level
+        <select id="year">
+          <option>1</option><option>2</option><option>3</option><option>4</option>
+        </select>
+      </label>
+      <div class="actions">
+        <button class="primary" id="save" type="submit">Add student</button>
+        <button type="button" id="cancel" hidden>Cancel</button>
+      </div>
+    </form>
+    <p class="err" id="err" role="alert"></p>
+  </section>
+
+  <section>
+    <div class="bar">
+      <h2 style="margin:0">All students (<span id="count">0</span>)</h2>
+      <input id="search" type="search" placeholder="Search name, email, course" aria-label="Search students">
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Name</th><th>Email</th><th>Course</th><th>Year</th><th></th></tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+  </section>
+</main>
+
+<script>
+  const KEY = 'students-crud';
+  const $ = id => document.getElementById(id);
+  let students = load();
+  let editingId = null;
+
+  function load() {
+    try { return JSON.parse(localStorage.getItem(KEY)) || []; } catch { return []; }
+  }
+  function persist() {
+    try { localStorage.setItem(KEY, JSON.stringify(students)); } catch {}
+  }
+  const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+  // READ
+  function render() {
+    const q = $('search').value.trim().toLowerCase();
+    const list = students.filter(s => [s.name, s.email, s.course].join(' ').toLowerCase().includes(q));
+    $('count').textContent = students.length;
+    $('rows').innerHTML = list.length ? list.map(s => `
+      <tr class="${s.id === editingId ? 'editing' : ''}">
+        <td>${esc(s.name)}</td><td>${esc(s.email)}</td><td>${esc(s.course)}</td><td>${esc(s.year)}</td>
+        <td class="row-actions">
+          <button class="small" data-edit="${s.id}">Edit</button>
+          <button class="small danger" data-del="${s.id}">Delete</button>
+        </td>
+      </tr>`).join('')
+      : `<tr><td colspan="5" class="empty">${students.length ? 'No students match your search.' : 'No students yet. Add one above.'}</td></tr>`;
+  }
+
+  function resetForm() {
+    editingId = null;
+    $('form').reset();
+    $('form-title').textContent = 'Add student';
+    $('save').textContent = 'Add student';
+    $('cancel').hidden = true;
+    $('err').textContent = '';
+  }
+
+  // CREATE + UPDATE
+  $('form').addEventListener('submit', e => {
+    e.preventDefault();
+    const data = { name: $('name').value.trim(), email: $('email').value.trim(), course: $('course').value.trim(), year: $('year').value };
+    if (!data.name || !data.course) return $('err').textContent = 'Name and course are required.';
+    if (!/^\S+@\S+\.\S+$/.test(data.email)) return $('err').textContent = 'Enter a valid email address.';
+    if (editingId) {
+      students = students.map(s => s.id === editingId ? { ...s, ...data } : s);
+    } else {
+      students.push({ id: Date.now().toString(36), ...data });
+    }
+    persist(); resetForm(); render();
+  });
+
+  $('cancel').addEventListener('click', () => { resetForm(); render(); });
+  $('search').addEventListener('input', render);
+
+  $('rows').addEventListener('click', e => {
+    const editId = e.target.dataset.edit, delId = e.target.dataset.del;
+    if (editId) {
+      const s = students.find(x => x.id === editId);
+      editingId = s.id;
+      $('name').value = s.name; $('email').value = s.email; $('course').value = s.course; $('year').value = s.year;
+      $('form-title').textContent = 'Edit student';
+      $('save').textContent = 'Save changes';
+      $('cancel').hidden = false;
+      $('err').textContent = '';
+      $('name').focus();
+      render();
+    }
+    // DELETE
+    if (delId) {
+      const s = students.find(x => x.id === delId);
+      if (confirm(`Delete ${s.name}?`)) {
+        students = students.filter(x => x.id !== delId);
+        if (editingId === delId) resetForm();
+        persist(); render();
+      }
+    }
+  });
+
+  render();
+</script>
 </body>
 </html>
